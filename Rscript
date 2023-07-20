@@ -1,2 +1,146 @@
 #this is where we input the main script for analysis
 #begin with script setup. Install the required packages and import the data
+
+# set working directory
+setwd("C:/Users/shenykk/Desktop/CODON/singlecellproject_diya_tim")
+
+# install Signac and annotation packages
+setRepositories(ind=1:3)
+install.packages("Signac")
+
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("EnsDb.Hsapiens.v86")
+BiocManager::install("BSgenome.Hsapiens.UCSC.hg38")
+BiocManager::install("biovizBase")
+
+# load libraries
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(EnsDb.Hsapiens.v86)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(biovizBase)
+
+
+
+# load RNA and atac data
+counts <- Read10X_h5(filename = "lymph_node_lymphoma_14k_filtered_feature_bc_matrix.h5")
+fragpath <- "lymph_node_lymphoma_14k_atac_fragments.tsv.gz"
+
+# counts has 2 tables
+# $`Gene Expression` 36601 x 736320 sparse Matrix of class "dgCMatrix"
+# $Peaks 71766 x 736320 sparse Matrix of class "dgCMatrix"
+
+# get gene annotations for hg38
+annotation <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
+seqlevels(annotation) <- paste0('chr', seqlevels(annotation))
+
+# create a Seurat object containing the RNA adata
+lymph <- CreateSeuratObject(
+  counts = counts$`Gene Expression`,
+  assay = "RNA"
+)
+
+# create ATAC assay and add it to the object
+lymph[["ATAC"]] <- CreateChromatinAssay(
+  counts = counts$Peaks,
+  sep = c(":", "-"),
+  fragments = fragpath,
+  annotation = annotation
+)
+
+# 3. Normalize the gene expression data and perform QC
+
+# QC
+DefaultAssay(lymph) <- "RNA"
+lymph[["percent.mt"]] <- PercentageFeatureSet(lymph, pattern = "^MT-")
+VlnPlot(lymph, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+lymph <- subset(lymph, subset = nFeature_RNA > 100 & nFeature_RNA < 10000 & percent.mt < 10)
+# 14645 to 14433 cells
+
+# Normalize
+lymph <- NormalizeData(lymph, normalization.method = "LogNormalize", scale.factor = 10000)
+
+
+# 4. Run PCA and create a UMAP plot using the gene expression data
+
+# Find variable features
+lymph <- FindVariableFeatures(lymph, selection.method = "vst", nfeatures = 2000)
+# Scale data
+all.genes <- rownames(lymph)
+lymph <- ScaleData(lymph, features = all.genes)
+# PCA
+lymph <- RunPCA(lymph, features = VariableFeatures(object = lymph))
+# Elbow plot
+ElbowPlot(lymph)
+
+# Find neighbors and clusters
+lymph <- FindNeighbors(lymph, dims = 1:10) # 15 for H9 batch 2
+lymph <- FindClusters(lymph, resolution = 0.5)
+# UMAP
+lymph <- RunUMAP(lymph, dims = 1:10)
+DimPlot(lymph, reduction = "umap", label = TRUE)
+
+
+
+
+# 5. Add gene annotation information to the ATAC assay
+
+# I think annotation information was added earlier, let's check:
+
+DefaultAssay(lymph) <- "ATAC"
+lymph[['ATAC']]
+
+#ChromatinAssay data with 71766 features for 14433 cells
+#Variable features: 0 
+#Genome: 
+#  Annotation present: TRUE 
+#Motifs present: FALSE 
+#Fragment files: 1 
+
+
+# 6. Run LSI and UMAP using the ATAC assay
+
+DefaultAssay(lymph) <- "ATAC"
+Idents(lymph) <- "orig.ident"
+
+lymph <- NucleosomeSignal(lymph)
+lymph <- TSSEnrichment(lymph)
+
+VlnPlot(
+  object = lymph,
+  features = c("nCount_RNA", "nCount_ATAC", "TSS.enrichment", "nucleosome_signal"),
+  ncol = 4,
+  pt.size = 1
+)
+
+# filter out low quality cells
+lymph <- subset(
+  x = lymph,
+  subset = nCount_ATAC < 150000 &
+    nCount_RNA < 50000 &
+    nCount_ATAC > 500 &
+    nCount_RNA > 500 &
+    nucleosome_signal < 1.5 &
+    TSS.enrichment > 1
+)
+lymph
+# 14433  to 12717 
+
+
+lymph <- FindTopFeatures(lymph, min.cutoff = 5)
+lymph <- RunTFIDF(lymph)
+lymph <- RunSVD(lymph)
+
+saveRDS(lymph, "lymph_after_LSI")
+
+DepthCor(lymph)
+
+lymph <- RunUMAP(object = lymph, reduction = 'lsi', dims = 2:10)
+lymph <- FindNeighbors(object = lymph, reduction = 'lsi', dims = 2:10)
+lymph <- FindClusters(object = lymph, verbose = FALSE, algorithm = 3)
+DimPlot(object = lymph, label = TRUE) + NoLegend()
+
