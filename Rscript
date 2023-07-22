@@ -144,3 +144,243 @@ lymph <- FindNeighbors(object = lymph, reduction = 'lsi', dims = 2:10)
 lymph <- FindClusters(object = lymph, verbose = FALSE, algorithm = 3)
 DimPlot(object = lymph, label = TRUE) + NoLegend()
 
+
+
+
+# 7. Create a joint UMAP and clustering using both the RNA and ATAC data
+
+# build a joint neighbor graph using both assays
+lymph <- FindMultiModalNeighbors(
+  object = lymph,
+  reduction.list = list("pca", "lsi"), 
+  dims.list = list(1:50, 2:40),
+  modality.weight.name = "RNA.weight",
+  verbose = TRUE
+)
+
+# build a joint UMAP visualization
+lymph <- RunUMAP(
+  object = lymph,
+  nn.name = "weighted.nn",
+  assay = "RNA",
+  verbose = TRUE
+)
+
+DimPlot(lymph, label = TRUE, repel = TRUE, reduction = "umap") + NoLegend()
+
+
+# 8. Find gene expression markers for each cluster of cells
+# 9. Plot the top unique marker genes for each cluster
+# 10. Annotate the tumor cells
+
+# use gene expression data for this
+# in the vignette, reference dataset from SeuratDisk was used for cell label transfer
+# going to try using cell marker genes for each cluster
+
+lymph <- FindNeighbors(lymph, dims = 1:10) # 15 for H9 batch 2
+lymph <- FindClusters(lymph, resolution = 0.5)
+# UMAP
+lymph <- RunUMAP(lymph, dims = 1:10)
+DimPlot(lymph, reduction = "umap", label = TRUE)
+
+
+library(dplyr)
+DefaultAssay(lymph) <- "RNA" # use gene expression data for this
+combined.markers <- FindAllMarkers(lymph, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+t <- combined.markers %>% group_by(cluster) %>% top_n(n = 15, wt = avg_log2FC)
+View(t)
+
+
+# top 3 markers for clusters 0, 1, 2, 3
+FeaturePlot(
+  object = lymph,
+  features = c('ANK3', 'PITPNC1', 'PARP8', 'MT-CO2', 
+               'MT-CO3', 'MT-ATP6', 'SLC8A1', 'AL162414.1',  
+               'LRMDA', 'ARHGAP24', 'GPM6A', 'AC090125.1'),
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 4
+)
+
+# top 3 markers for clusters 4, 5, 6, 7
+FeaturePlot(
+  object = lymph,
+  features = c('RRM2', 'ASPM', 'TOP2A', 'LYST', 
+               'CADM1', 'CBLB', 'AC090125.1', 'PAX5',  
+               'FCRL5', 'BANK1', 'CCSER1', 'GNG7'),
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 4
+)
+
+# top 3 markers for clusters 8, 9, 10, 11
+FeaturePlot(
+  object = lymph,
+  features = c('CCL4L2', 'SHC4', 'ENOX1', 'POLQ', 
+               'RHEX', 'IGF2BP2', 'KCNMA1', 'AL162414.1',  
+               'SLC8A1', 'SEMA3A', 'MAGI1', 'FBXL7'),
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 4
+)
+
+# top 3 markers for clusters 12
+FeaturePlot(
+  object = lymph,
+  features = c('PDK4', 'FGF13', 'SELENOP', 'MRC1'),
+  pt.size = 0.1,
+  max.cutoff = 'q95',
+  ncol = 2
+)
+
+library("writexl")
+write_xlsx(t,"marker_genes.xlsx")
+
+# https://www.proteinatlas.org/ENSG00000260314-MRC1/single+cell+type
+
+FeaturePlot(
+  object = lymph,
+  features = c('MS4A1', 'BANK1', 'PAX5'),
+  pt.size = 0.1,
+  max.cutoff = 'q95'
+)
+
+# B cell markers
+FeaturePlot(
+  object = lymph,
+  features = c('CD19', 'CD20', 'CD79A', 'CD79B'),
+  pt.size = 0.1,
+  max.cutoff = 'q95'
+)
+
+# T cell markers
+FeaturePlot(
+  object = lymph,
+  features = c('CD3D', 'CD3E', 'CD3G', 'CD4', 'CD8A'),
+  pt.size = 0.1,
+  max.cutoff = 'q95'
+)
+
+
+# myeloid/monocyte markers
+FeaturePlot(
+  object = lymph,
+  features = c('LYZ', 'CD68', 'CD14', 'CD163'),
+  pt.size = 0.1,
+  max.cutoff = 'q95'
+)
+
+# endothelial
+FeaturePlot(
+  object = lymph,
+  features = c('CD31', 'CD34', 'CD45', 'LYVE1',"ICAM-1"),
+  pt.size = 0.1,
+  max.cutoff = 'q95'
+)
+
+
+
+
+
+# 0: T cell
+# 1: Dying
+# 2: Myeloid/monocytes
+# 3: Tumour B cell
+# 4: T cell
+# 5: T cell
+# 6: Tumour B cell
+# 7: B cell
+# 8: T cell
+# 9: Tumour B cell
+# 10: Tumour B cell
+# 11: Endothelial
+# 12: Endothelial
+
+
+new.cluster.ids <- c("T cell","Dying", "Myeloid/monocytes", "Tumour B cell", "T cell", 
+                     "T cell", "Tumour B cell", "B cell", "T cell", 
+                     "Tumour B cell","Tumour B cell", "Endothelial", "Endothelial")
+
+
+names(new.cluster.ids) <- levels(lymph)
+lymph <- RenameIdents(lymph, new.cluster.ids)
+DimPlot(lymph, reduction = "umap", label = TRUE)
+
+
+
+# 11. Link ATAC peaks to the top marker genes
+
+DefaultAssay(lymph) <- "ATAC"
+
+# first compute the GC content for each peak
+lymph <- RegionStats(lymph, genome = BSgenome.Hsapiens.UCSC.hg38)
+
+# link peaks to genes
+lymph <- LinkPeaks(
+  object = lymph,
+  peak.assay = "ATAC",
+  expression.assay = "RNA",
+  genes.use = c("PAX5", "MS4A1")
+)
+
+
+# 12.Plot DNA accessibility and gene expression for some of the marker genes
+idents.plot <- c("T cell", "B cell", "Tumour B cell")
+
+CoveragePlot(
+  object = lymph,
+  region = "MS4A1",
+  features = "MS4A1",
+  expression.assay = "RNA",
+  idents = idents.plot,
+  extend.upstream = 500,
+  extend.downstream = 10000
+)
+
+CoveragePlot(
+  object = lymph,
+  region = "PAX5",
+  features = "PAX5",
+  expression.assay = "RNA",
+  idents = idents.plot,
+  extend.upstream = 1000,
+  extend.downstream = 120000
+)
+
+# Doing Task 11 and 12 with different genes
+# get marker genes of each cell type
+DefaultAssay(lymph) <- "RNA" # use gene expression data for this
+combined.markers <- FindAllMarkers(lymph, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+ta <- combined.markers %>% group_by(cluster) %>% top_n(n = 15, wt = avg_log2FC)
+View(ta)
+write_xlsx(ta,"marker_genes_annotated.xlsx")
+
+
+DefaultAssay(lymph) <- "ATAC"
+
+# first compute the GC content for each peak
+lymph <- RegionStats(lymph, genome = BSgenome.Hsapiens.UCSC.hg38)
+
+
+# link peaks to genes (the top marker genes for T cell, B cell, B tumour cell, myeloid/mono)
+lymph <- LinkPeaks(
+  object = lymph,
+  peak.assay = "ATAC",
+  expression.assay = "RNA",
+  genes.use = c("THEMIS", "SLC8A1", "GPM6A", "BANK1")
+)
+
+
+# 12. Plot DNA accessibility and gene expression for some of the marker genes
+idents.plot <- c("T cell", "B cell", "Tumour B cell", "Endothelial", "Myeloid/monocytes")
+
+CoveragePlot(
+  object = lymph,
+  region = "GPM6A",
+  features = "GPM6A",
+  expression.assay = "RNA",
+  idents = idents.plot,
+  extend.upstream = 100000,
+  extend.downstream = 200000
+)
+
