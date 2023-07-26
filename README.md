@@ -29,6 +29,8 @@ https://support.10xgenomics.com/single-cell-multiome-atac-gex/datasets/1.0.0/lym
 File downloaded:
 lymph_node_lymphoma_14k_filtered_feature_bc_matrix.h5
 
+Capstone presentation: https://itssastar-my.sharepoint.com/:p:/r/personal/diyasri_gis_a-star_edu_sg/Documents/Presentation2.pptx?d=wb2b99457adbe4064811fecbc9c5693ca&csf=1&web=1&e=unxmp8
+
 ## Tasks: ##
 1. Create a seurat object containing the RNA data and metadata
 2. Add the ATAC data as another assay in the Seurat object
