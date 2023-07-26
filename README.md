@@ -15,14 +15,19 @@ expression measurements. We will group cells according to both their DNA accessi
 gene expression patterns, identify ATAC-seq peaks that may regulate key cell-type marker
 genes, and visualize DNA accessibility patterns among the cells.
 
-Paper: https://pages.10xgenomics.com/rs/446-PBO-704/images/10x_LIT000110_Data_Spotlight_Multiome_digital.pdf
+Referenced paper: https://pages.10xgenomics.com/rs/446-PBO-704/images/10x_LIT000110_Data_Spotlight_Multiome_digital.pdf
 
-Abstract: 
+Highlights:
+• Distinguish tumor versus normal cells in a heterogeneous sample
+• Reconstruct cell type–specific gene regulatory network
+• Confirm PAX5 as a critical regulator specific to tumor B cells
+• Identify putative target genes downstream of PAX5
 
 Data source:
 https://support.10xgenomics.com/single-cell-multiome-atac-gex/datasets/1.0.0/lymph_node_lymphoma_14k
 
 File downloaded:
+lymph_node_lymphoma_14k_filtered_feature_bc_matrix.h5
 
 ## Tasks: ##
 1. Create a seurat object containing the RNA data and metadata
